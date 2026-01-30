@@ -384,11 +384,25 @@ HOMOGLYPHS = {
 
 class PromptGuard:
     def __init__(self, config: Optional[Dict] = None):
-        self.config = config or self._default_config()
+        self.config = self._default_config()
+        if config:
+            self.config = self._deep_merge(self.config, config)
         self.owner_ids = set(self.config.get('owner_ids', []))
         self.sensitivity = self.config.get('sensitivity', 'medium')
         self.rate_limits: Dict[str, List[float]] = {}
-        
+
+    @staticmethod
+    def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+        result = base.copy()
+        for key, value in override.items():
+            if (key in result
+                    and isinstance(result[key], dict)
+                    and isinstance(value, dict)):
+                result[key] = PromptGuard._deep_merge(result[key], value)
+            else:
+                result[key] = value
+        return result
+
     def _default_config(self) -> Dict:
         return {
             'sensitivity': 'medium',
@@ -694,12 +708,20 @@ def main():
         parser.print_help()
         sys.exit(1)
     
-    # Build config
     config = {'sensitivity': args.sensitivity}
     if args.config:
-        import yaml
+        try:
+            import yaml
+        except ImportError:
+            print(
+                'Error: PyYAML required for config files. Install with: pip install pyyaml',
+                file=sys.stderr,
+            )
+            sys.exit(1)
         with open(args.config) as f:
-            config.update(yaml.safe_load(f))
+            file_config = yaml.safe_load(f) or {}
+            file_config = file_config.get('prompt_guard', file_config)
+            config.update(file_config)
     
     # Parse context
     context = {}
